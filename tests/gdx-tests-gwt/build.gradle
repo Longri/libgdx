@@ -16,15 +16,22 @@
 
 buildscript {
     dependencies {
-        classpath "de.richsource.gradle.plugins:gwt-gradle-plugin:${versions.gwtPlugin}"
-        classpath "org.akhikhl.gretty:gretty:2.0.0"
+        classpath "org.wisepersist:gwt-gradle-plugin:${versions.gwtPlugin}"
+        classpath "org.gretty:gretty:${versions.gretty}"
     }
 }
-apply plugin: "war"
-apply plugin: 'org.akhikhl.gretty'
-apply plugin: "gwt"
 
+apply plugin: 'war'
+apply plugin: 'gwt'
+apply plugin: 'org.gretty'
 
+import org.wisepersist.gradle.plugins.gwt.GwtSuperDev
+import org.akhikhl.gretty.AppBeforeIntegrationTestTask
+
+gretty.httpPort = 8080
+gretty.resourceBase = project.buildDir.path + "/gwt/draftOut"
+gretty.contextPath = "/"
+gretty.portPropertiesFileName = "TEMP_PORTS.properties"
 
 dependencies {
     compile project(":tests:gdx-tests")
@@ -34,43 +41,48 @@ dependencies {
 }
 
 gwt {
-    gwtVersion='2.8.0' // Should match the gwt version used for building the gwt backend
+    gwtVersion='2.8.2' // Should match the gwt version used for building the gwt backend
     maxHeapSize="1G" // Default 256m is not enough for gwt compiler. GWT is HUNGRY
     minHeapSize="1G"
 
     src = files(file("src/")) // Needs to be in front of "modules" below.
     modules 'com.badlogic.gdx.tests.gwt.GdxTestsGwt'
     devModules 'com.badlogic.gdx.tests.gwt.GdxTestsGwt'
-    project.webAppDirName = 'webapp'
 
     compiler.strict = true
     compiler.disableCastChecking = true
 }
 
+task startHttpServer () {
+    dependsOn draftCompileGwt
 
-gretty {
-    webAppDirName = "war"
-    inplaceMode = "hard"
+    doFirst {
+        copy {
+            from "webapp"
+            into gretty.resourceBase
+        }
+
+        copy {
+            from "war"
+            into gretty.resourceBase
+        }
+    }
 }
 
-import org.akhikhl.gretty.AppBeforeIntegrationTestTask
-import org.akhikhl.gretty.AppAfterIntegrationTestTask
-
-draftWar {
-    from "war"
-}
-
-task myBeforeIntegration(type: AppBeforeIntegrationTestTask) {
-    dependsOn draftWar
-    resourceBase = draftWar.archivePath.toString()
+task beforeRun(type: AppBeforeIntegrationTestTask, dependsOn: startHttpServer) {
+    // The next line allows ports to be reused instead of
+    // needing a process to be manually terminated.
+    file("build/TEMP_PORTS.properties").delete()
+    // Somewhat of a hack; uses Gretty's support for wrapping a task in
+    // a start and then stop of a Jetty server that serves files while
+    // also running the SuperDev code server.
     integrationTestTask 'superDev'
+
+    interactive false
 }
 
-task myAfterIntegration(type: AppAfterIntegrationTestTask) {
-    integrationTestTask 'superDev'
-}
-
-task superDev(type: de.richsource.gradle.plugins.gwt.GwtSuperDev) {
+task superDev (type: GwtSuperDev) {
+    dependsOn startHttpServer
     doFirst {
         gwt.modules = gwt.devModules
     }
@@ -100,9 +112,10 @@ task addSource {
         sourceSets.main.compileClasspath += files(project(':tests:gdx-tests').sourceSets.main.allJava.srcDirs)
         sourceSets.main.compileClasspath += files(project(':backends:gdx-backends-gwt').sourceSets.main.allJava.srcDirs)
         sourceSets.main.compileClasspath += files(project(':extensions:gdx-box2d:gdx-box2d-gwt').sourceSets.main.allJava.srcDirs)
-        sourceSets.main.compileClasspath += files(project(':extensions:gdx-controllers:gdx-controllers').sourceSets.main.allJava.srcDirs)
+        sourceSets.main.compileClasspath += files(project(':extensions:gdx-controllers:gdx-controllers-core').sourceSets.main.allJava.srcDirs)
         sourceSets.main.compileClasspath += files(project(':extensions:gdx-controllers:gdx-controllers-gwt').sourceSets.main.allJava.srcDirs)
         sourceSets.main.compileClasspath += files(project(':gdx').sourceSets.main.allJava.srcDirs)
+        sourceSets.main.compileClasspath += files(sourceSets.main.resources.srcDirs)
     }
 }
 
