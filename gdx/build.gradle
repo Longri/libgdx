@@ -29,7 +29,6 @@ compileJava {
 }
 
 dependencies {
-    compileOnly project(":extensions:gdx-jnigen")
     testCompile libraries.junit
 }
 
